@@ -22,6 +22,15 @@
                 </div>
             </div>
         </b-row>
+
+      <ConfigProvider v-slot="{ config }">
+        <UserBeaconSettings
+            v-if="config"
+            :root="root"
+            :user-id="userId">>
+        </UserBeaconSettings>
+      </ConfigProvider>
+
         <b-row class="ml-3 mb-1">
             <i class="pref-icon pt-1 fa fa-lg fa-plus-square-o" />
             <div class="pref-content pr-1">
@@ -69,6 +78,8 @@
                 </div>
             </b-row>
         </ConfigProvider>
+
+
         <p class="mt-2">
             {{ titleYouAreUsing }} <strong>{{ diskUsage }}</strong> {{ titleOfDiskSpace }}
             <span v-html="quotaUsageString"></span>
@@ -93,12 +104,14 @@ import { getUserPreferencesModel } from "components/User/UserPreferencesModel";
 import ConfigProvider from "components/providers/ConfigProvider";
 import { userLogoutAll, userLogoutClient } from "layout/menu";
 import "@fortawesome/fontawesome-svg-core";
+import UserBeaconSettings from "./UserBeaconSettings";
 
 Vue.use(BootstrapVue);
 
 export default {
     components: {
-        ConfigProvider,
+      ConfigProvider,
+      UserBeaconSettings,
     },
     props: {
         userId: {
@@ -116,6 +129,7 @@ export default {
             diskUsage: "",
             quotaUsageString: "",
             baseUrl: `${getAppRoot()}user`,
+            root: getAppRoot(),
             messageVariant: null,
             message: null,
             name: "",

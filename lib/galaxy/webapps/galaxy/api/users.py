@@ -14,7 +14,12 @@ from markupsafe import escape
 from sqlalchemy import (
     false,
     or_,
+    and_,
     true,
+)
+
+from sqlalchemy.orm import (
+    subqueryload
 )
 
 from galaxy import (
@@ -31,6 +36,8 @@ from galaxy.managers.context import ProvidesUserContext
 from galaxy.model import (
     User,
     UserAddress,
+    UserPreference,
+    History
 )
 from galaxy.security.validate_user_input import (
     validate_email,
@@ -77,8 +84,8 @@ class FastAPIHistories:
         status_code=status.HTTP_204_NO_CONTENT,
     )
     def recalculate_disk_usage(
-        self,
-        trans: ProvidesUserContext = DependsOnTrans,
+            self,
+            trans: ProvidesUserContext = DependsOnTrans,
     ):
         self.service.recalculate_disk_usage(trans)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -91,7 +98,8 @@ class UserAPIController(BaseGalaxyAPIController, UsesTagsMixin, BaseUIController
     api_key_manager: api_keys.ApiKeyManager = depends(api_keys.ApiKeyManager)
 
     @expose_api
-    def index(self, trans: ProvidesUserContext, deleted="False", f_email=None, f_name=None, f_any=None, **kwd):
+    def index(self, trans: ProvidesUserContext, deleted="False", f_email=None, f_name=None, f_any=None,
+              f_beacon="False", **kwd):
         """
         GET /api/users
         GET /api/users/deleted
@@ -147,9 +155,9 @@ class UserAPIController(BaseGalaxyAPIController, UsesTagsMixin, BaseUIController
             # special case2: if the galaxy admin has specified that other user email/names are
             #   exposed, we don't want special case #1
             if (
-                not trans.user_is_admin
-                and not trans.app.config.expose_user_name
-                and not trans.app.config.expose_user_email
+                    not trans.user_is_admin
+                    and not trans.app.config.expose_user_name
+                    and not trans.app.config.expose_user_email
             ):
                 item = trans.user.to_dict(value_mapper={"id": trans.security.encode_id})
                 return [item]
@@ -543,7 +551,7 @@ class UserAPIController(BaseGalaxyAPIController, UsesTagsMixin, BaseUIController
             user_info_values = {}
             for item in payload:
                 if item.startswith(prefix):
-                    user_info_values[item[len(prefix) :]] = payload[item]
+                    user_info_values[item[len(prefix):]] = payload[item]
             form_values = trans.model.FormValues(user_info_form, user_info_values)
             trans.sa_session.add(form_values)
             user.values = form_values
@@ -790,7 +798,7 @@ class UserAPIController(BaseGalaxyAPIController, UsesTagsMixin, BaseUIController
                         )
                     if filter_selection:
                         prefix = f"{filter_type}|"
-                        new_filters.append(prefixed_name[len(prefix) :])
+                        new_filters.append(prefixed_name[len(prefix):])
             user.preferences[filter_type] = ",".join(new_filters)
         trans.sa_session.add(user)
         trans.sa_session.flush()
@@ -897,6 +905,67 @@ class UserAPIController(BaseGalaxyAPIController, UsesTagsMixin, BaseUIController
         return {"message": message, "inputs": inputs}
 
     @expose_api
+    def get_beacon_users(self, trans, payload=None, **kwd):
+        """
+        GET /api/users/beacon
+        Returns the IDs of all users that have opted in to beacon share, while not exposing names or emails.
+        """
+        query = trans.sa_session.query(User).join(History).filter(
+            User.preferences.any(and_(UserPreference.name == "beacon_enabled", UserPreference.value == 1))).filter(
+            History.name == "___BEACON_PICKUP___")
+
+        beacon_histories = []
+        for user in query:
+            for history in user.histories:
+                beacon_histories.append(
+                    {
+                        "user_id": trans.security.encode_id(user.id),
+                        "history_id": trans.security.encode_id(history.id)
+                    }
+                )
+                # this break is here to forcefully allow only one beacon history per user
+                break
+
+        return {"beacon_histories": beacon_histories}
+
+    @expose_api
+    def get_beacon(self, trans, id, payload=None, **kwd):
+        """
+        GET /api/users/{id}/beacon
+        Returns information about beacon share settings
+
+        :param id: the encoded id of the user
+        :type  id: str
+        """
+        user = self._get_user(trans, id)
+
+        enabled = user.preferences["beacon_enabled"] if "beacon_enabled" in user.preferences else False
+
+        return {"message": "benno ist ein cooler typ", "enabled": enabled}
+
+    @expose_api
+    def set_beacon(self, trans, id, payload=None, **kwd):
+        """
+        POST /api/users/{id}/beacon
+        
+
+        :param id: the encoded id of the user
+        :type  id: str
+
+        :param payload: settings to persist
+        :type  payload: dict
+        """
+        payload = payload or {}
+        user = self._get_user(trans, id)
+
+        if "enabled" in payload:
+            user.preferences["beacon_enabled"] = payload["enabled"]
+            trans.sa_session.flush()
+            return {"message": "setting enabled..."}
+
+        return {"message": payload}
+
+    @expose_api
     def get_custom_builds(self, trans, id, payload=None, **kwd):
         """
         GET /api/users/{id}/custom_builds
@@ -916,9 +985,9 @@ class UserAPIController(BaseGalaxyAPIController, UsesTagsMixin, BaseUIController
                     dbkey["linecount"]
                 )
                 if (
-                    chrom_count_dataset
-                    and not chrom_count_dataset.deleted
-                    and chrom_count_dataset.state == trans.app.model.HistoryDatasetAssociation.states.OK
+                        chrom_count_dataset
+                        and not chrom_count_dataset.deleted
+                        and chrom_count_dataset.state == trans.app.model.HistoryDatasetAssociation.states.OK
                 ):
                     chrom_count = int(open(chrom_count_dataset.file_name).readline())
                     dbkey["count"] = chrom_count

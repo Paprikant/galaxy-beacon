@@ -837,6 +837,30 @@ def populate_api_routes(webapp, app):
     )
 
     webapp.mapper.connect(
+        "get_beacon_users",
+        "/api/users/beacon",
+        controller="users",
+        action="get_beacon_users",
+        conditions=dict(method=["GET"]),
+    )
+
+    webapp.mapper.connect(
+        "get_beacon",
+        "/api/users/{id}/beacon",
+        controller="users",
+        action="get_beacon",
+        conditions=dict(method=["GET"]),
+    )
+
+    webapp.mapper.connect(
+        "set_beacon",
+        "/api/users/{id}/beacon",
+        controller="users",
+        action="set_beacon",
+        conditions=dict(method=["POST"]),
+    )
+
+    webapp.mapper.connect(
         "set_information",
         "/api/users/{id}/information/inputs",
         controller="users",
